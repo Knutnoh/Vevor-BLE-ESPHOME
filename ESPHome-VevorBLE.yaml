@@ -165,33 +165,35 @@ switch:
     optimistic: true
     turn_on_action:
       - lambda: 'id(command_aktiv) = true;'
+      - logger.log: "Power Toggle ON"
       - ble_client.ble_write:
           id: heizung_ble
           service_uuid: ${service_uuid}
           characteristic_uuid: ${char_fff2_uuid}
           value: [0xBA, 0xAB, 0x04, 0xBB, 0xA1, 0x00, 0x00, 0xC5]
-      - delay: 1000ms
+      - delay: 3000ms
       - ble_client.ble_write:
           id: heizung_ble
           service_uuid: ${service_uuid}
           characteristic_uuid: ${char_fff2_uuid}
           value: [0xBA, 0xAB, 0x04, 0xCC, 0x00, 0x00, 0x00, 0x35]
-      - delay: 500ms
+      - delay: 1000ms
       - lambda: 'id(command_aktiv) = false;'
     turn_off_action:
       - lambda: 'id(command_aktiv) = true;'
+      - logger.log: "Power Toggle OFF"
       - ble_client.ble_write:
           id: heizung_ble
           service_uuid: ${service_uuid}
           characteristic_uuid: ${char_fff2_uuid}
           value: [0xBA, 0xAB, 0x04, 0xBB, 0xA1, 0x00, 0x00, 0xC5]
-      - delay: 1000ms
+      - delay: 3000ms
       - ble_client.ble_write:
           id: heizung_ble
           service_uuid: ${service_uuid}
           characteristic_uuid: ${char_fff2_uuid}
           value: [0xBA, 0xAB, 0x04, 0xCC, 0x00, 0x00, 0x00, 0x35]
-      - delay: 500ms
+      - delay: 1000ms
       - lambda: 'id(command_aktiv) = false;'
 
   - platform: template
@@ -242,7 +244,7 @@ button:
           value: [0xBA, 0xAB, 0x04, 0xBB, 0xAD, 0x00, 0x00, 0xD1]
 
   - platform: template
-    name: "Temperatur/Gebläse +"
+    name: "Temperatur +"
     icon: "mdi:thermometer-plus"
     on_press:
       - if:
@@ -256,12 +258,40 @@ button:
                 value: [0xBA, 0xAB, 0x04, 0xBB, 0xA2, 0x00, 0x00, 0xC6]
 
   - platform: template
-    name: "Temperatur/Gebläse -"
+    name: "Temperatur -"
     icon: "mdi:thermometer-minus"
     on_press:
       - if:
           condition:
             lambda: 'return id(aktueller_modus) == 1;'
+          then:
+            - ble_client.ble_write:
+                id: heizung_ble
+                service_uuid: ${service_uuid}
+                characteristic_uuid: ${char_fff2_uuid}
+                value: [0xBA, 0xAB, 0x04, 0xBB, 0xA3, 0x00, 0x00, 0xC7]
+
+  - platform: template
+    name: "Gebläse +"
+    icon: "mdi:fan-plus"
+    on_press:
+      - if:
+          condition:
+            lambda: 'return id(aktueller_modus) == 0;'
+          then:
+            - ble_client.ble_write:
+                id: heizung_ble
+                service_uuid: ${service_uuid}
+                characteristic_uuid: ${char_fff2_uuid}
+                value: [0xBA, 0xAB, 0x04, 0xBB, 0xA2, 0x00, 0x00, 0xC6]
+
+  - platform: template
+    name: "Gebläse -"
+    icon: "mdi:fan-minus"
+    on_press:
+      - if:
+          condition:
+            lambda: 'return id(aktueller_modus) == 0;'
           then:
             - ble_client.ble_write:
                 id: heizung_ble
