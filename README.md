@@ -29,7 +29,7 @@ Dadurch ist die Lösung flexibler und auch für verschiedene Modellvarianten der
 - 🌬️ Lüftermodus  
 - 🏔️ Höhenmodus (High Altitude Mode)  
 - 📊 Sensoren:
-  - Betriebsmodus (Manuell/Automatik)  
+  - Betriebsmodus (Manuell/Automatik) momentan nur von manuell auf Automatik
   - Heizungsstatus (inkl. Phasen: Aufwärmen, Zündung, Heizen etc.)  
   - Raumtemperatur  
   - Schalentemperatur  
