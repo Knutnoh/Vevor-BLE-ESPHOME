@@ -9,9 +9,13 @@ substitutions:
   service_uuid: "0000fff0-0000-1000-8000-00805f9b34fb"
   char_fff1_uuid: "0000fff1-0000-1000-8000-00805f9b34fb"
   char_fff2_uuid: "0000fff2-0000-1000-8000-00805f9b34fb"
-  heater_mac: "EC:B1:C3:00:3C:56"
+  heater_mac: "EC:B1:C3:00:3C:56" #hier muss eure Mac von der Heizung hin
 
 esp32_ble_tracker:
+  scan_parameters:
+    interval: 1100ms
+    window: 1100ms
+    active: true
 
 esp32:
   board: esp32dev
@@ -47,13 +51,44 @@ globals:
   - id: command_aktiv
     type: bool
     initial_value: 'false'
+  - id: letzter_befehl_zeit
+    type: unsigned long
+    initial_value: '0'
+
+script:
+  - id: send_command_safe
+    parameters:
+      cmd: int
+    then:
+      - lambda: 'id(command_aktiv) = true;'
+      - delay: 100ms
+      - ble_client.ble_write:
+          id: heizung_ble
+          service_uuid: ${service_uuid}
+          characteristic_uuid: ${char_fff2_uuid}
+          value: !lambda |-
+            uint8_t checksum = 0xBA + 0xAB + 0x04 + 0xBB + cmd;
+            return {0xBA, 0xAB, 0x04, 0xBB, (uint8_t)cmd, 0x00, 0x00, checksum};
+      - delay: 500ms
+      - ble_client.ble_write:
+          id: heizung_ble
+          service_uuid: ${service_uuid}
+          characteristic_uuid: ${char_fff2_uuid}
+          value: [0xBA, 0xAB, 0x04, 0xCC, 0x00, 0x00, 0x00, 0x35]
+      - delay: 500ms
+      - lambda: |-
+          id(command_aktiv) = false;
+          id(letzter_befehl_zeit) = millis();
 
 interval:
   - interval: 5s
     then:
       - if:
           condition:
-            lambda: 'return id(ble_verbunden) && !id(command_aktiv);'
+            lambda: |-
+              return id(ble_verbunden) && 
+                     !id(command_aktiv) && 
+                     (millis() - id(letzter_befehl_zeit) > 2000);
           then:
             - ble_client.ble_write:
                 id: heizung_ble
@@ -132,7 +167,7 @@ sensor:
         uint8_t ziel = x[6];
         uint8_t betrieb_zustand = x[7];
         uint8_t spannung = x[9];
-        float raumtemp = x[11] / 2.5;
+        float raumtemp = x[11] / 2.2;  // KORRIGIERT
         uint8_t schalentemp = x[13];
         
         const char* zustand_namen[] = {"Bereit", "Aufwärmen", "Selbsttest", "Zündung", "Heizen", "Herunterfahren"};
@@ -164,37 +199,13 @@ switch:
     icon: "mdi:fire"
     optimistic: true
     turn_on_action:
-      - lambda: 'id(command_aktiv) = true;'
-      - logger.log: "Power Toggle ON"
-      - ble_client.ble_write:
-          id: heizung_ble
-          service_uuid: ${service_uuid}
-          characteristic_uuid: ${char_fff2_uuid}
-          value: [0xBA, 0xAB, 0x04, 0xBB, 0xA1, 0x00, 0x00, 0xC5]
-      - delay: 3000ms
-      - ble_client.ble_write:
-          id: heizung_ble
-          service_uuid: ${service_uuid}
-          characteristic_uuid: ${char_fff2_uuid}
-          value: [0xBA, 0xAB, 0x04, 0xCC, 0x00, 0x00, 0x00, 0x35]
-      - delay: 1000ms
-      - lambda: 'id(command_aktiv) = false;'
+      - script.execute:
+          id: send_command_safe
+          cmd: 0xA1
     turn_off_action:
-      - lambda: 'id(command_aktiv) = true;'
-      - logger.log: "Power Toggle OFF"
-      - ble_client.ble_write:
-          id: heizung_ble
-          service_uuid: ${service_uuid}
-          characteristic_uuid: ${char_fff2_uuid}
-          value: [0xBA, 0xAB, 0x04, 0xBB, 0xA1, 0x00, 0x00, 0xC5]
-      - delay: 3000ms
-      - ble_client.ble_write:
-          id: heizung_ble
-          service_uuid: ${service_uuid}
-          characteristic_uuid: ${char_fff2_uuid}
-          value: [0xBA, 0xAB, 0x04, 0xCC, 0x00, 0x00, 0x00, 0x35]
-      - delay: 1000ms
-      - lambda: 'id(command_aktiv) = false;'
+      - script.execute:
+          id: send_command_safe
+          cmd: 0xA1
 
   - platform: template
     name: "Lüfter"
@@ -202,17 +213,13 @@ switch:
     icon: "mdi:fan"
     optimistic: true
     turn_on_action:
-      - ble_client.ble_write:
-          id: heizung_ble
-          service_uuid: ${service_uuid}
-          characteristic_uuid: ${char_fff2_uuid}
-          value: [0xBA, 0xAB, 0x04, 0xBB, 0xA4, 0x00, 0x00, 0xC8]
+      - script.execute:
+          id: send_command_safe
+          cmd: 0xA4
     turn_off_action:
-      - ble_client.ble_write:
-          id: heizung_ble
-          service_uuid: ${service_uuid}
-          characteristic_uuid: ${char_fff2_uuid}
-          value: [0xBA, 0xAB, 0x04, 0xBB, 0xA4, 0x00, 0x00, 0xC8]
+      - script.execute:
+          id: send_command_safe
+          cmd: 0xA4
 
   - platform: template
     name: "Höhenmodus"
@@ -220,28 +227,22 @@ switch:
     icon: "mdi:mountain"
     optimistic: true
     turn_on_action:
-      - ble_client.ble_write:
-          id: heizung_ble
-          service_uuid: ${service_uuid}
-          characteristic_uuid: ${char_fff2_uuid}
-          value: [0xBA, 0xAB, 0x04, 0xBB, 0xA5, 0x00, 0x00, 0xC9]
+      - script.execute:
+          id: send_command_safe
+          cmd: 0xA5
     turn_off_action:
-      - ble_client.ble_write:
-          id: heizung_ble
-          service_uuid: ${service_uuid}
-          characteristic_uuid: ${char_fff2_uuid}
-          value: [0xBA, 0xAB, 0x04, 0xBB, 0xA5, 0x00, 0x00, 0xC9]
+      - script.execute:
+          id: send_command_safe
+          cmd: 0xA5
 
 button:
   - platform: template
     name: "Modus Wechseln"
     icon: "mdi:swap-horizontal"
     on_press:
-      - ble_client.ble_write:
-          id: heizung_ble
-          service_uuid: ${service_uuid}
-          characteristic_uuid: ${char_fff2_uuid}
-          value: [0xBA, 0xAB, 0x04, 0xBB, 0xAD, 0x00, 0x00, 0xD1]
+      - script.execute:
+          id: send_command_safe
+          cmd: 0xAD
 
   - platform: template
     name: "Temperatur +"
@@ -251,11 +252,9 @@ button:
           condition:
             lambda: 'return id(aktueller_modus) == 1;'
           then:
-            - ble_client.ble_write:
-                id: heizung_ble
-                service_uuid: ${service_uuid}
-                characteristic_uuid: ${char_fff2_uuid}
-                value: [0xBA, 0xAB, 0x04, 0xBB, 0xA2, 0x00, 0x00, 0xC6]
+            - script.execute:
+                id: send_command_safe
+                cmd: 0xA2
 
   - platform: template
     name: "Temperatur -"
@@ -265,11 +264,9 @@ button:
           condition:
             lambda: 'return id(aktueller_modus) == 1;'
           then:
-            - ble_client.ble_write:
-                id: heizung_ble
-                service_uuid: ${service_uuid}
-                characteristic_uuid: ${char_fff2_uuid}
-                value: [0xBA, 0xAB, 0x04, 0xBB, 0xA3, 0x00, 0x00, 0xC7]
+            - script.execute:
+                id: send_command_safe
+                cmd: 0xA3
 
   - platform: template
     name: "Gebläse +"
@@ -279,11 +276,9 @@ button:
           condition:
             lambda: 'return id(aktueller_modus) == 0;'
           then:
-            - ble_client.ble_write:
-                id: heizung_ble
-                service_uuid: ${service_uuid}
-                characteristic_uuid: ${char_fff2_uuid}
-                value: [0xBA, 0xAB, 0x04, 0xBB, 0xA2, 0x00, 0x00, 0xC6]
+            - script.execute:
+                id: send_command_safe
+                cmd: 0xA2
 
   - platform: template
     name: "Gebläse -"
@@ -293,11 +288,9 @@ button:
           condition:
             lambda: 'return id(aktueller_modus) == 0;'
           then:
-            - ble_client.ble_write:
-                id: heizung_ble
-                service_uuid: ${service_uuid}
-                characteristic_uuid: ${char_fff2_uuid}
-                value: [0xBA, 0xAB, 0x04, 0xBB, 0xA3, 0x00, 0x00, 0xC7]
+            - script.execute:
+                id: send_command_safe
+                cmd: 0xA3
 
 number:
   - platform: template
@@ -315,6 +308,7 @@ number:
           condition:
             lambda: 'return id(aktueller_modus) == 1 && (int)x != (int)id(zielwert).state;'
           then:
+            - lambda: 'id(command_aktiv) = true;'
             - repeat:
                 count: !lambda 'return abs((int)x - (int)id(zielwert).state);'
                 then:
@@ -323,7 +317,11 @@ number:
                       service_uuid: ${service_uuid}
                       characteristic_uuid: ${char_fff2_uuid}
                       value: !lambda 'return ((int)x > (int)id(zielwert).state) ? std::vector<uint8_t>{0xBA, 0xAB, 0x04, 0xBB, 0xA2, 0x00, 0x00, 0xC6} : std::vector<uint8_t>{0xBA, 0xAB, 0x04, 0xBB, 0xA3, 0x00, 0x00, 0xC7};'
-                  - delay: 300ms
+                  - delay: 600ms
+            - delay: 500ms
+            - lambda: |-
+                id(command_aktiv) = false;
+                id(letzter_befehl_zeit) = millis();
 
   - platform: template
     name: "Gebläsestufe"
@@ -339,6 +337,7 @@ number:
           condition:
             lambda: 'return id(aktueller_modus) == 0 && (int)x != (int)id(zielwert).state;'
           then:
+            - lambda: 'id(command_aktiv) = true;'
             - repeat:
                 count: !lambda 'return abs((int)x - (int)id(zielwert).state);'
                 then:
@@ -347,4 +346,8 @@ number:
                       service_uuid: ${service_uuid}
                       characteristic_uuid: ${char_fff2_uuid}
                       value: !lambda 'return ((int)x > (int)id(zielwert).state) ? std::vector<uint8_t>{0xBA, 0xAB, 0x04, 0xBB, 0xA2, 0x00, 0x00, 0xC6} : std::vector<uint8_t>{0xBA, 0xAB, 0x04, 0xBB, 0xA3, 0x00, 0x00, 0xC7};'
-                  - delay: 300ms
+                  - delay: 600ms
+            - delay: 500ms
+            - lambda: |-
+                id(command_aktiv) = false;
+                id(letzter_befehl_zeit) = millis();
